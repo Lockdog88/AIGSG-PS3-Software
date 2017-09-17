@@ -1,0 +1,11 @@
+com.intel.core.platform.selected.id=com.intel.iss.mcu.platform.mintfield
+com.intel.core.project.name=aigsg_ps2_LoRa
+com.intel.core.project.type.id=com.intel.iss.mcu.nature.qmsi.v1_1_0.qmsiNature
+com.intel.core.project.version=3.0.0
+eclipse.preferences.version=1
+platform/build.toolchain_id=com.intel.iss.mcu.toolChain.gcc.a.debug
+platform/connection.configuration=-f scripts/board/quark_d2000_onboard.cfg "-c set QUARK_D2000_SHUTDOWN_ON_TAPSTATUS_FAIL 1"
+platform/connection.port=3333
+platform/core.name=Quark
+platform/soc=quark_d2000
+platform/target=x86

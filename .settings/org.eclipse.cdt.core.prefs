@@ -1,0 +1,11 @@
+eclipse.preferences.version=1
+environment/project/issm.configuration.debug/BUILD/delimiter=;
+environment/project/issm.configuration.debug/BUILD/operation=replace
+environment/project/issm.configuration.debug/BUILD/value=debug
+environment/project/issm.configuration.debug/append=true
+environment/project/issm.configuration.debug/appendContributed=true
+environment/project/issm.configuration.release/BUILD/delimiter=;
+environment/project/issm.configuration.release/BUILD/operation=replace
+environment/project/issm.configuration.release/BUILD/value=release
+environment/project/issm.configuration.release/append=true
+environment/project/issm.configuration.release/appendContributed=true

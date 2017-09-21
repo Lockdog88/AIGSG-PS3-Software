@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Intel Corporation
+ * Copyright (c) 2017, Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -115,18 +115,40 @@ typedef enum {
  * SPI status
  */
 typedef enum {
-	QM_SPI_IDLE,       /**< SPI device is not in use. */
-	QM_SPI_BUSY,       /**< SPI device is busy. */
-	QM_SPI_RX_OVERFLOW /**< RX transfer has overflown. */
+	QM_SPI_IDLE,	/**< SPI device is not in use. */
+	QM_SPI_BUSY,	/**< SPI device is busy. */
+	QM_SPI_RX_OVERFLOW, /**< RX transfer has overflown. */
+	QM_SPI_RX_FULL,     /**< Appl. Rx buffer full (slave only). */
+	QM_SPI_TX_EMPTY     /**< Appl. Tx buffer empty (slave only) . */
 } qm_spi_status_t;
 
 /**
+ * QM SPI Frame Format
+ */
+typedef enum {
+	/**< Standard SPI mode */
+	QM_SPI_FRAME_FORMAT_STANDARD = 0x0,
+} qm_spi_frame_format_t;
+
+/*
+ * SPI update type
+ *
+ * Used by qm_spi_irq_update to know what to update, RX or TX.
+ * Logical OR can be used in order to update both RX and TX.
+ */
+typedef enum {
+	QM_SPI_UPDATE_RX = BIT(0), /* Update RX. */
+	QM_SPI_UPDATE_TX = BIT(1), /* Update TX. */
+} qm_spi_update_t;
+
+/*
  * SPI configuration type.
  */
 typedef struct {
-	qm_spi_frame_size_t frame_size; /**< Frame Size. */
-	qm_spi_tmode_t transfer_mode;   /**< Transfer mode (enum). */
-	qm_spi_bmode_t bus_mode;	/**< Bus mode (enum). */
+	qm_spi_frame_size_t frame_size;     /**< Frame Size. */
+	qm_spi_tmode_t transfer_mode;       /**< Transfer mode (enum). */
+	qm_spi_bmode_t bus_mode;	    /**< Bus mode (enum). */
+	qm_spi_frame_format_t frame_format; /* Data frame format for TX/RX */
 
 	/**
 	 * SCK = SPI_clock/clk_divider.
@@ -137,19 +159,28 @@ typedef struct {
 } qm_spi_config_t;
 
 /**
- * SPI IRQ transfer type.
+ * SPI aynchronous transfer type.
+ *
+ * If the frame size is 8 bits or less, 1 byte is needed per data frame. If the
+ * frame size is 9-16 bits, 2 bytes are needed per data frame and frames of more
+ * than 16 bits require 4 bytes. In each case, the least significant bits are
+ * sent while the extra bits are discarded. The most significant bits of the
+ * frame are sent first.
  */
 typedef struct {
-	uint8_t *tx;     /**< Write data. */
-	uint8_t *rx;     /**< Read data. */
-	uint16_t tx_len; /**< Write data Length. */
-	uint16_t rx_len; /**< Read buffer length. */
+	void *tx;	  /**< Write data. */
+	void *rx;	  /**< Read data. */
+	uint16_t tx_len;   /**< Number of data frames to write. */
+	uint16_t rx_len;   /**< Number of data frames to read. */
+	bool keep_enabled; /**< Keep device on once transfer is done. */
 
 	/**
 	 * Transfer callback.
 	 *
 	 * Called after all data is transmitted/received or if the driver
 	 * detects an error during the SPI transfer.
+	 * For slave device it also allows the application to update
+	 * transfer information by calling the qm_spi_irq_update function.
 	 *
 	 * @param[in] data The callback user data.
 	 * @param[in] error 0 on success.
@@ -164,20 +195,26 @@ typedef struct {
 } qm_spi_async_transfer_t;
 
 /**
- * SPI transfer type.
+ * SPI synchronous transfer type.
+ *
+ * If the frame size is 8 bits or less, 1 byte is needed per data frame. If the
+ * frame size is 9-16 bits, 2 bytes are needed per data frame and frames of more
+ * than 16 bits require 4 bytes. In each case, the least significant bits are
+ * sent while the extra bits are discarded. The most significant bits of the
+ * frame are sent first.
  */
 typedef struct {
-	uint8_t *tx;     /**< Write Data. */
-	uint8_t *rx;     /**< Read Data. */
-	uint16_t tx_len; /**< Write Data Length. */
-	uint16_t rx_len; /**< Receive Data Length. */
+	void *tx;	/**< Write data. */
+	void *rx;	/**< Read data. */
+	uint16_t tx_len; /**< Number of data frames to write. */
+	uint16_t rx_len; /**< Number of data frames to read. */
 } qm_spi_transfer_t;
 
 /**
  * Set SPI configuration.
  *
  * Change the configuration of a SPI module.
- * This includes transfer mode, bus mode and clock divider.
+ * This includes transfer mode, bus mode, clock divider and data frame size.
  *
  * @param[in] spi Which SPI module to configure.
  * @param[in] cfg New configuration for SPI. This must not be NULL.
@@ -203,11 +240,15 @@ int qm_spi_slave_select(const qm_spi_t spi, const qm_spi_slave_select_t ss);
 /**
  * Get SPI bus status.
  *
- * Retrieve SPI bus status. Return QM_SPI_BUSY if transmitting data or data Tx
- * FIFO not empty.
+ * Retrieve SPI bus status. Return QM_SPI_BUSY if transmitting data or SPI TX
+ * FIFO not empty; QM_SPI_IDLE is available for transfer; QM_SPI_RX_OVERFLOW if
+ * an RX overflow has occurred.
+ *
+ * The user may call this function before performing an SPI transfer in order to
+ * guarantee that the SPI interface is available.
  *
  * @param[in] spi Which SPI to read the status of.
- * @param[out] status Get spi status. This must not be null.
+ * @param[out] status Current SPI status. This must not be null.
  *
  * @return Standard errno return type for QMSI.
  * @retval 0 on success.
@@ -269,7 +310,35 @@ int qm_spi_transfer(const qm_spi_t spi, const qm_spi_transfer_t *const xfer,
  * @retval Negative @ref errno for possible error codes.
  */
 int qm_spi_irq_transfer(const qm_spi_t spi,
-			const qm_spi_async_transfer_t *const xfer);
+			volatile const qm_spi_async_transfer_t *const xfer);
+
+/**
+ * Update parameters of Interrupt based transfer on SPI.
+ *
+ * Allow the application to transmit and/or receive more data over the current
+ * SPI communication.
+ * The application is supposed to call this function only inside the registered
+ * callback, once notified from the driver.
+ * It is strongly recommended to use this function for slave-based applications
+ * only, as slave controllers usually do not know how many frames an external
+ * master will send or request before starting the communication.
+ * Master controllers should not use this function as it will most likely
+ * corrupt the transaction.
+ *
+ * @param[in] spi Which SPI to transfer to / from.
+ * @param[in] xfer Transfer structure includes write / read buffers, length,
+ *                 user callback function and the callback context data.
+ *                 The structure must not be NULL and must be kept valid until
+ *                 the transfer is complete.
+ * @param[in] update Specify if only RX has to be updated, or only TX or both.
+ *
+ * @return Standard errno return type for QMSI.
+ * @retval 0 on success.
+ * @retval Negative @ref errno for possible error codes.
+ */
+int qm_spi_irq_update(const qm_spi_t spi,
+		      volatile const qm_spi_async_transfer_t *const xfer,
+		      const qm_spi_update_t update);
 
 /**
  * Configure a DMA channel with a specific transfer direction.
@@ -285,6 +354,14 @@ int qm_spi_irq_transfer(const qm_spi_t spi,
  * between transfers, like transaction width, burst size, and handshake
  * interface parameters. The user will likely only call this function once for
  * the lifetime of an application unless the channel needs to be repurposed.
+ *
+ * This function configures the DMA source transfer width according to the
+ * currently set SPI frame size. Therefore, whenever the SPI frame is updated
+ * (using qm_spi_set_config) this function needs to be called again as the
+ * previous source transfer width configuration is no longer valid. Note that if
+ * the current frame size lies between 17 and 24 bits, this function fails
+ * (returning -EINVAL) as the DMA core cannot handle 3-byte source width
+ * transfers with buffers containing 1 padding byte between consecutive frames.
  *
  * Note that qm_dma_init() must first be called before configuring a channel.
  *
@@ -308,11 +385,9 @@ int qm_spi_dma_channel_config(
  * Perform a DMA-based transfer on the SPI bus.
  *
  * If transfer mode is full duplex (QM_SPI_TMOD_TX_RX), then tx_len and
- * rx_len must be equal and neither of both callbacks can be NULL.
- * Similarly, for transmit-only transfers (QM_SPI_TMOD_TX) rx_len must be 0
- * and tx_callback cannot be NULL, while for receive-only transfers
- * (QM_SPI_TMOD_RX) tx_len must be 0 and rx_callback cannot be NULL.
- * Transfer length is limited to 4KB.
+ * rx_len must be equal. Similarly, for transmit-only transfers (QM_SPI_TMOD_TX)
+ * rx_len must be 0 while for receive-only transfers (QM_SPI_TMOD_RX) tx_len
+ * must be 0. Transfer length is limited to 4KB.
  *
  * For starting a transfer, this controller demands at least one slave
  * select line (SS) to be enabled. Thus, a call to qm_spi_slave_select()
@@ -325,7 +400,8 @@ int qm_spi_dma_channel_config(
  *
  * @param[in] spi SPI controller identifier.
  * @param[in] xfer Structure containing pre-allocated write and read data
- *                 buffers and callback functions. This must not be NULL.
+ *                 buffers and callback functions. This must not be NULL and
+ *                 must be kept valid until the transfer is complete.
  *
  * @return Standard errno return type for QMSI.
  * @retval 0 on success.
@@ -362,6 +438,38 @@ int qm_spi_irq_transfer_terminate(const qm_spi_t spi);
  * @retval Negative @ref errno for possible error codes.
  */
 int qm_spi_dma_transfer_terminate(const qm_spi_t spi);
+
+/**
+ * Save SPI context.
+ *
+ * Saves the configuration of the specified SPI peripheral
+ * before entering sleep.
+ *
+ * @param[in] spi SPI controller identifier.
+ * @param[out] ctx SPI context structure. This must not be NULL.
+ *
+ * @return Standard errno return type for QMSI.
+ * @retval 0 on success.
+ * @retval Negative @ref errno for possible error codes.
+ */
+int qm_spi_save_context(const qm_spi_t spi, qm_spi_context_t *const ctx);
+
+/**
+ * Restore SPI context.
+ *
+ * Restore the configuration of the specified SPI peripheral
+ * after exiting sleep.
+ *
+ * @param[in] spi SPI controller identifier.
+ * @param[in] ctx SPI context structure. This must not be NULL.
+ *
+ * @return Standard errno return type for QMSI.
+ * @retval 0 on success.
+ * @retval Negative @ref errno for possible error codes.
+ */
+int qm_spi_restore_context(const qm_spi_t spi,
+			   const qm_spi_context_t *const ctx);
+
 /**
  * @}
  */

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, Intel Corporation
+# Copyright (c) 2017, Intel Corporation
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,9 +27,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
-SOC_ROOT_DIR = $(SOC)
-SOC_MAKEFILE = $(SOC)
-
 SUPPORTED_SOCS = quark_se \
                  quark_d2000
 
@@ -39,7 +36,6 @@ TARGET ?= $(DEFAULT_TARGET)
 TARGETS_quark_d2000 = x86
 TARGETS_quark_se = x86 \
                    sensor
-
 ifeq ($(filter $(SOC),$(SUPPORTED_SOCS)),)
 $(error SOC=$(SOC) is not supported. Run 'make help' for help)
 endif
@@ -50,30 +46,27 @@ ifeq ($(filter $(TARGET),$(SUPPORTED_TARGETS)),)
 $(error TARGET=$(TARGET) is not supported for $(SOC). Run 'make help' for help)
 endif
 
-ifeq ($(TARGET), sensor)
-SOC_ROOT_DIR = quark_se
-SOC_MAKEFILE = sensor
-endif
-
 ### Variables
 BASE_DIR = ..
 
 HEADERS = $(wildcard $(BASE_DIR)/include/*.h)
-HEADERS += $(wildcard $(BASE_DIR)/soc/$(SOC_ROOT_DIR)/include/*.h)
+HEADERS += $(wildcard $(BASE_DIR)/soc/$(SOC)/include/*.h)
 HEADERS += $(wildcard $(BASE_DIR)/drivers/include/*.h)
 ifeq ($(TARGET), sensor)
 HEADERS += $(wildcard $(BASE_DIR)/drivers/sensor/include/*.h)
 endif
+
+ifneq ($(SOC), quark_d2000)
+HEADERS += $(wildcard $(BASE_DIR)/drivers/usb/include/*.h)
+endif
+
 EXPORTED_HEADERS += $(addprefix $(LIBQMSI_INCLUDE_DIR)/, $(notdir $(HEADERS)))
 
 ### Make includes
 include $(BASE_DIR)/base.mk
 include $(BASE_DIR)/drivers/drivers.mk
-ifeq ($(TARGET), sensor)
-include $(BASE_DIR)/drivers/sensor/sensor.mk
-endif
-include $(BASE_DIR)/soc/$(SOC_ROOT_DIR)/$(SOC_MAKEFILE).mk
-include $(BASE_DIR)/soc/$(SOC_ROOT_DIR)/drivers/drivers.mk
+include $(BASE_DIR)/soc/$(SOC)/$(SOC).mk
+include $(BASE_DIR)/soc/$(SOC)/drivers/drivers.mk
 
 SLINK_NAME := $(LIBQMSI_LIB_DIR)/libqmsi.a
 
@@ -83,6 +76,10 @@ $(LIBQMSI_LIB_DIR)/$(LIBQMSI_FILENAME): $(OBJECTS)
 ifeq ($(wildcard $(SLINK_NAME)),)
 ifneq ($(OS),Windows_NT)
 	$(LN) -s $(LIBQMSI_FILENAME) $(SLINK_NAME)
+else
+        # Since on Windows we have no symbolic link, we are forced to use copy
+        # to provide the 'libqmsi.a' file
+	$(call copy, $(LIBQMSI_LIB_DIR)\$(LIBQMSI_FILENAME), $(SLINK_NAME))
 endif
 endif
 

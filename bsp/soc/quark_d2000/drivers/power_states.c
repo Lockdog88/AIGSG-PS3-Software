@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Intel Corporation
+ * Copyright (c) 2017, Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,14 +33,37 @@
 #include "qm_isr.h"
 #include "qm_adc.h"
 #include "qm_flash.h"
-
-#include "rar.h"
 #include "soc_watch.h"
 
-void power_cpu_halt(void)
+typedef struct {
+	uint32_t ac_power_save;
+	uint32_t clk_gate_save;
+	uint32_t sys_clk_ctl_save;
+	uint32_t osc0_cfg_save;
+	uint32_t osc1_cfg_save;
+	uint32_t adc_mode_save;
+	uint32_t aon_vr_save;
+	uint32_t flash_tmg_save;
+	uint32_t ext_clock_save;
+	uint32_t lp_clk_save;
+	uint32_t pmux_slew_save;
+} power_context_t;
+
+static power_context_t power_context;
+
+void qm_power_cpu_halt(void)
 {
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_HALT, 0);
-	__asm__ __volatile__("hlt");
+	/*
+	 * STI sets the IF flag. After the IF flag is set,
+	 * the core begins responding to external,
+	 * maskable interrupts after the next instruction is executed.
+	 * When this function is called with interrupts disabled,
+	 * this guarantees that an interrupt is caught only
+	 * after the processor has transitioned into HLT.
+	 */
+	__asm__ __volatile__("sti\n\t"
+			     "hlt\n\t");
 }
 
 static void clear_all_pending_interrupts(void)
@@ -49,24 +72,27 @@ static void clear_all_pending_interrupts(void)
 	QM_SCSS_CMP->cmp_stat_clr = -1;
 
 	/* Clear RTC interrupts. */
-	QM_RTC->rtc_eoi;
+	QM_RTC[QM_RTC_0]->rtc_eoi;
 
 	/* Clear timers interrupt flag. */
-	QM_PWM->timerseoi;
+	QM_PWM[QM_PWM_0]->timerseoi;
 
 	/* Clear GPIO interrupts. */
 	QM_GPIO[QM_GPIO_0]->gpio_porta_eoi = -1;
 }
 
-void power_soc_sleep(void)
+void qm_power_soc_sleep(void)
 {
-	/* Variables to save register values. */
-	uint32_t ac_power_save;
-	uint32_t clk_gate_save = QM_SCSS_CCU->ccu_periph_clk_gate_ctl;
-	uint32_t sys_clk_ctl_save = QM_SCSS_CCU->ccu_sys_clk_ctl;
-	uint32_t osc0_cfg_save = QM_SCSS_CCU->osc0_cfg1;
-	uint32_t adc_mode_save = QM_ADC->adc_op_mode;
-	uint32_t flash_tmg_save = QM_FLASH[QM_FLASH_0]->tmg_ctrl;
+	/* Save register values. */
+	power_context.ac_power_save = QM_SCSS_CMP->cmp_pwr;
+	power_context.clk_gate_save = QM_SCSS_CCU->ccu_periph_clk_gate_ctl;
+	power_context.sys_clk_ctl_save = QM_SCSS_CCU->ccu_sys_clk_ctl;
+	power_context.osc0_cfg_save = QM_SCSS_CCU->osc0_cfg1;
+	power_context.adc_mode_save = QM_ADC->adc_op_mode;
+	power_context.flash_tmg_save = QM_FLASH[QM_FLASH_0]->tmg_ctrl;
+	power_context.lp_clk_save = QM_SCSS_CCU->ccu_lp_clk_ctl;
+
+	QM_SCSS_GP->gps0 |= QM_GPS0_POWER_STATE_SLEEP;
 
 	/* Clear any pending interrupts. */
 	clear_all_pending_interrupts();
@@ -74,7 +100,6 @@ void power_soc_sleep(void)
 	qm_adc_set_mode(QM_ADC_0, QM_ADC_MODE_PWR_DOWN);
 
 	/* Turn off high power comparators. */
-	ac_power_save = QM_SCSS_CMP->cmp_pwr;
 	QM_SCSS_CMP->cmp_pwr &= QM_AC_HP_COMPARATORS_MASK;
 
 	/*
@@ -122,18 +147,21 @@ void power_soc_sleep(void)
 	clk_sys_set_mode(CLK_SYS_HYB_OSC_4MHZ, CLK_SYS_DIV_8);
 
 	/* Set the RAR to retention mode. */
-	rar_set_mode(RAR_RETENTION);
+	qm_rar_set_mode(QM_RAR_RETENTION);
 
 	/*
 	 * If wake source is any of AON Timer, RTC, GPIO interrupt, program
 	 * CCU_SYS_CLK_CTL.CCU_SYS_CLK_SEL to RTC Oscillator.
 	 */
 	/* Enter SoC sleep mode. */
-	power_cpu_halt();
+	qm_power_cpu_halt();
+}
 
+void qm_power_soc_sleep_restore(void)
+{
 	/* From here on, restore the SoC to an active state. */
 	/* Set the RAR to normal mode. */
-	rar_set_mode(RAR_NORMAL);
+	qm_rar_set_mode(QM_RAR_NORMAL);
 
 	/*
 	 * Since we are running below 4MHz, 0 wait states are configured.
@@ -144,10 +172,10 @@ void power_soc_sleep(void)
 	 * This setting will be too conservative until the frequency has been
 	 * restored.
 	 */
-	QM_FLASH[QM_FLASH_0]->tmg_ctrl = flash_tmg_save;
+	QM_FLASH[QM_FLASH_0]->tmg_ctrl = power_context.flash_tmg_save;
 
 	/* Restore all previous values. */
-	QM_SCSS_CCU->ccu_sys_clk_ctl = sys_clk_ctl_save;
+	QM_SCSS_CCU->ccu_sys_clk_ctl = power_context.sys_clk_ctl_save;
 	/* Re-apply clock divider values. DIV_EN must go 0 -> 1. */
 	QM_SCSS_CCU->ccu_sys_clk_ctl &=
 	    ~(QM_CCU_SYS_CLK_DIV_EN | QM_CCU_RTC_CLK_DIV_EN);
@@ -162,32 +190,34 @@ void power_soc_sleep(void)
 	};
 
 	/* Restore original clocking, ADC, analog comparator states. */
-	QM_SCSS_CCU->osc0_cfg1 = osc0_cfg_save;
-	QM_SCSS_CCU->ccu_periph_clk_gate_ctl = clk_gate_save;
+	QM_SCSS_CCU->osc0_cfg1 = power_context.osc0_cfg_save;
+	QM_SCSS_CCU->ccu_periph_clk_gate_ctl = power_context.clk_gate_save;
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER, SOCW_REG_OSC0_CFG1);
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER,
 			    SOCW_REG_CCU_PERIPH_CLK_GATE_CTL);
-	QM_SCSS_CMP->cmp_pwr = ac_power_save;
-	QM_ADC->adc_op_mode = adc_mode_save;
+	QM_SCSS_CMP->cmp_pwr = power_context.ac_power_save;
+	QM_ADC->adc_op_mode = power_context.adc_mode_save;
+	QM_SCSS_CCU->ccu_lp_clk_ctl = power_context.lp_clk_save;
+
+	QM_SCSS_GP->gps0 &= ~QM_GPS0_POWER_STATE_SLEEP;
 }
 
-void power_soc_deep_sleep(const power_wake_event_t wake_event)
+void qm_power_soc_deep_sleep(const qm_power_wake_event_t wake_event)
 {
-	/* Variables to save register values. */
-	uint32_t ac_power_save;
-	uint32_t clk_gate_save = QM_SCSS_CCU->ccu_periph_clk_gate_ctl;
-	uint32_t sys_clk_ctl_save = QM_SCSS_CCU->ccu_sys_clk_ctl;
-	uint32_t osc0_cfg_save = QM_SCSS_CCU->osc0_cfg1;
-	uint32_t osc1_cfg_save = QM_SCSS_CCU->osc1_cfg0;
-	uint32_t adc_mode_save = QM_ADC->adc_op_mode;
-	uint32_t aon_vr_save = QM_SCSS_PMU->aon_vr;
-	uint32_t flash_tmg_save = QM_FLASH[QM_FLASH_0]->tmg_ctrl;
-	uint32_t ext_clock_save;
-	uint32_t lp_clk_save, pmux_slew_save;
+	/* Save register values. */
+	power_context.ac_power_save = QM_SCSS_CMP->cmp_pwr;
+	power_context.clk_gate_save = QM_SCSS_CCU->ccu_periph_clk_gate_ctl;
+	power_context.sys_clk_ctl_save = QM_SCSS_CCU->ccu_sys_clk_ctl;
+	power_context.osc0_cfg_save = QM_SCSS_CCU->osc0_cfg1;
+	power_context.osc1_cfg_save = QM_SCSS_CCU->osc1_cfg0;
+	power_context.adc_mode_save = QM_ADC->adc_op_mode;
+	power_context.aon_vr_save = QM_SCSS_PMU->aon_vr;
+	power_context.flash_tmg_save = QM_FLASH[QM_FLASH_0]->tmg_ctrl;
+	power_context.pmux_slew_save = QM_SCSS_PMUX->pmux_slew[0];
+	power_context.ext_clock_save = QM_SCSS_CCU->ccu_ext_clock_ctl;
+	power_context.lp_clk_save = QM_SCSS_CCU->ccu_lp_clk_ctl;
 
-	pmux_slew_save = QM_SCSS_PMUX->pmux_slew[0];
-	ext_clock_save = QM_SCSS_CCU->ccu_ext_clock_ctl;
-	lp_clk_save = QM_SCSS_CCU->ccu_lp_clk_ctl;
+	QM_SCSS_GP->gps0 |= QM_GPS0_POWER_STATE_DEEP_SLEEP;
 
 	/* Clear any pending interrupts. */
 	clear_all_pending_interrupts();
@@ -197,11 +227,11 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	 * comparator.
 	 */
 	switch (wake_event) {
-	case POWER_WAKE_FROM_RTC:
+	case QM_POWER_WAKE_FROM_RTC:
 		QM_SCSS_CCU->wake_mask =
 		    SET_ALL_BITS & ~QM_CCU_WAKE_MASK_RTC_BIT;
 		break;
-	case POWER_WAKE_FROM_GPIO_COMP:
+	case QM_POWER_WAKE_FROM_GPIO_COMP:
 	default:
 		QM_SCSS_CCU->wake_mask = SET_ALL_BITS &
 					 ~(QM_CCU_WAKE_MASK_COMPARATOR_BIT |
@@ -209,12 +239,9 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 		break;
 	}
 
-	QM_SCSS_GP->gps1 |= QM_SCSS_GP_POWER_STATE_DEEP_SLEEP;
-
 	qm_adc_set_mode(QM_ADC_0, QM_ADC_MODE_DEEP_PWR_DOWN);
 
 	/* Turn off high power comparators. */
-	ac_power_save = QM_SCSS_CMP->cmp_pwr;
 	QM_SCSS_CMP->cmp_pwr &= QM_AC_HP_COMPARATORS_MASK;
 
 	/* Disable all peripheral clocks. */
@@ -228,7 +255,7 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	QM_SCSS_PMUX->pmux_slew[0] = 0;
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER, SOCW_REG_PMUX_SLEW);
 
-	if (wake_event != POWER_WAKE_FROM_RTC) {
+	if (wake_event != QM_POWER_WAKE_FROM_RTC) {
 		/* Disable RTC. */
 		QM_SCSS_CCU->osc1_cfg0 &= ~QM_OSC1_PD;
 
@@ -263,7 +290,8 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	/* Select 1.35V for voltage regulator. */
 	/* SCSS.AON_VR.VSEL = 0xB; */
 	QM_SCSS_PMU->aon_vr =
-	    (QM_AON_VR_PASS_CODE | (aon_vr_save & QM_AON_VR_VSEL_MASK) |
+	    (QM_AON_VR_PASS_CODE |
+	     (power_context.aon_vr_save & QM_AON_VR_VSEL_MASK) |
 	     QM_AON_VR_VSEL_1V35);
 	/* SCSS.AON_VR.ROK_BUF_VREG_MASK = 1; */
 	QM_SCSS_PMU->aon_vr = (QM_AON_VR_PASS_CODE | QM_SCSS_PMU->aon_vr |
@@ -274,19 +302,19 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	    (QM_AON_VR_PASS_CODE | QM_SCSS_PMU->aon_vr | QM_AON_VR_VSTRB);
 
 	/* Wait >= 1 usec, at 256 kHz this is 1 cycle. */
-	__asm__("nop");
+	__asm__ __volatile__("nop");
 
 	/* SCSS.AON_VR.VSEL_STROBE = 0; */
 	QM_SCSS_PMU->aon_vr =
 	    (QM_AON_VR_PASS_CODE | (QM_SCSS_PMU->aon_vr & ~QM_AON_VR_VSTRB));
 
 	/* Wait >= 2 usec, at 256 kHz this is 1 cycle. */
-	__asm__("nop");
+	__asm__ __volatile__("nop");
 
 	/* Set the RAR to retention mode. */
-	rar_set_mode(RAR_RETENTION);
+	qm_rar_set_mode(QM_RAR_RETENTION);
 
-	if (wake_event == POWER_WAKE_FROM_RTC) {
+	if (wake_event == QM_POWER_WAKE_FROM_RTC) {
 		/* Start running on the rtc clock */
 		clk_sys_set_mode(CLK_SYS_RTC_OSC, CLK_SYS_DIV_1);
 	}
@@ -295,11 +323,14 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	clk_periph_disable(CLK_PERIPH_REGISTER | CLK_PERIPH_CLK);
 
 	/* Enter SoC deep sleep mode. */
-	power_cpu_halt();
+	qm_power_cpu_halt();
+}
 
+void qm_power_soc_deep_sleep_restore(void)
+{
 	/* We are now exiting from deep sleep mode. */
 	/* Set the RAR to normal mode. */
-	rar_set_mode(RAR_NORMAL);
+	qm_rar_set_mode(QM_RAR_NORMAL);
 
 	/*
 	 * Since we are running below 4MHz, 0 wait states are configured.
@@ -310,7 +341,7 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	 * This setting will be too conservative until the frequency has been
 	 * restored.
 	 */
-	QM_FLASH[QM_FLASH_0]->tmg_ctrl = flash_tmg_save;
+	QM_FLASH[QM_FLASH_0]->tmg_ctrl = power_context.flash_tmg_save;
 
 	/* Restore operating voltage to 1.8V. */
 	/* SCSS.AON_VR.VSEL = 0x10; */
@@ -323,14 +354,14 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	    (QM_AON_VR_PASS_CODE | QM_SCSS_PMU->aon_vr | QM_AON_VR_VSTRB);
 
 	/* Wait >= 1 usec, at 256 kHz this is 1 cycle. */
-	__asm__("nop");
+	__asm__ __volatile__("nop");
 
 	/* SCSS.AON_VR.VSEL_STROBE = 0; */
 	QM_SCSS_PMU->aon_vr =
 	    (QM_AON_VR_PASS_CODE | (QM_SCSS_PMU->aon_vr & ~QM_AON_VR_VSTRB));
 
 	/* Wait >= 2 usec, at 256 kHz this is 1 cycle. */
-	__asm__("nop");
+	__asm__ __volatile__("nop");
 
 	/* SCSS.AON_VR.ROK_BUF_VREG_MASK = 0;  */
 	QM_SCSS_PMU->aon_vr =
@@ -338,7 +369,11 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	     (QM_SCSS_PMU->aon_vr & ~QM_AON_VR_ROK_BUF_VREG_MASK));
 
 	/* Wait >= 1 usec, at 256 kHz this is 1 cycle. */
-	__asm__("nop");
+	__asm__ __volatile__("nop");
+
+	/* Wait for voltage regulator to attain 1.8V regulation. */
+	while (!(QM_SCSS_PMU->aon_vr & QM_AON_VR_ROK_BUF_VREG_STATUS)) {
+	}
 
 	/* SCSS.OSC0_CFG0.OSC0_HYB_SET_REG1.OSC0_CFG0[0]  = 0; */
 	QM_SCSS_CCU->osc0_cfg0 &= ~QM_SI_OSC_1V2_MODE;
@@ -347,7 +382,7 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	QM_FLASH[QM_FLASH_0]->ctrl &= ~QM_FLASH_LVE_MODE;
 
 	/* Restore all previous values. */
-	QM_SCSS_CCU->ccu_sys_clk_ctl = sys_clk_ctl_save;
+	QM_SCSS_CCU->ccu_sys_clk_ctl = power_context.sys_clk_ctl_save;
 	/* Re-apply clock divider values. DIV_EN must go 0 -> 1. */
 	QM_SCSS_CCU->ccu_sys_clk_ctl &=
 	    ~(QM_CCU_SYS_CLK_DIV_EN | QM_CCU_RTC_CLK_DIV_EN);
@@ -367,24 +402,65 @@ void power_soc_deep_sleep(const power_wake_event_t wake_event)
 	QM_SCSS_CCU->ccu_gpio_db_clk_ctl |= QM_CCU_GPIO_DB_CLK_EN;
 
 	/* Restore original clocking, ADC, analog comparator states. */
-	QM_SCSS_CCU->osc0_cfg1 = osc0_cfg_save;
-	QM_SCSS_CCU->ccu_periph_clk_gate_ctl = clk_gate_save;
-	QM_SCSS_CCU->osc1_cfg0 = osc1_cfg_save;
+	QM_SCSS_CCU->osc0_cfg1 = power_context.osc0_cfg_save;
+	QM_SCSS_CCU->ccu_periph_clk_gate_ctl = power_context.clk_gate_save;
+	QM_SCSS_CCU->osc1_cfg0 = power_context.osc1_cfg_save;
 
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER, SOCW_REG_OSC0_CFG1);
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER,
 			    SOCW_REG_CCU_PERIPH_CLK_GATE_CTL);
-	QM_SCSS_CMP->cmp_pwr = ac_power_save;
-	QM_ADC->adc_op_mode = adc_mode_save;
+	QM_SCSS_CMP->cmp_pwr = power_context.ac_power_save;
+	QM_ADC->adc_op_mode = power_context.adc_mode_save;
 
-	QM_SCSS_PMUX->pmux_slew[0] = pmux_slew_save;
-	QM_SCSS_CCU->ccu_ext_clock_ctl = ext_clock_save;
-	QM_SCSS_CCU->ccu_lp_clk_ctl = lp_clk_save;
+	QM_SCSS_PMUX->pmux_slew[0] = power_context.pmux_slew_save;
+	QM_SCSS_CCU->ccu_ext_clock_ctl = power_context.ext_clock_save;
+	QM_SCSS_CCU->ccu_lp_clk_ctl = power_context.lp_clk_save;
 
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER, SOCW_REG_PMUX_SLEW);
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER, SOCW_REG_CCU_LP_CLK_CTL);
 	SOC_WATCH_LOG_EVENT(SOCW_EVENT_REGISTER, SOCW_REG_CCU_EXT_CLK_CTL);
 
 	QM_SCSS_CCU->wake_mask = SET_ALL_BITS;
-	QM_SCSS_GP->gps1 &= ~QM_SCSS_GP_POWER_STATE_DEEP_SLEEP;
+	QM_SCSS_GP->gps0 &= ~QM_GPS0_POWER_STATE_DEEP_SLEEP;
+}
+
+void qm_power_soc_restore(void)
+{
+	/*
+	 * If the SoC is waking from sleep or deep sleep mode then the full
+	 * system state must be restored.
+	 */
+	if (QM_SCSS_GP->gps0 & QM_GPS0_POWER_STATE_SLEEP) {
+		qm_power_soc_sleep_restore();
+	} else if (QM_SCSS_GP->gps0 & QM_GPS0_POWER_STATE_DEEP_SLEEP) {
+		qm_power_soc_deep_sleep_restore();
+	}
+}
+
+int qm_rar_set_mode(const qm_rar_state_t mode)
+{
+	QM_CHECK(mode <= QM_RAR_RETENTION, -EINVAL);
+	volatile uint32_t i = 32;
+	volatile uint32_t reg;
+
+	switch (mode) {
+	case QM_RAR_RETENTION:
+		QM_SCSS_PMU->aon_vr |=
+		    (QM_AON_VR_PASS_CODE | QM_AON_VR_ROK_BUF_VREG_MASK);
+		QM_SCSS_PMU->aon_vr |=
+		    (QM_AON_VR_PASS_CODE | QM_AON_VR_VREG_SEL);
+		break;
+
+	case QM_RAR_NORMAL:
+		reg = QM_SCSS_PMU->aon_vr & ~QM_AON_VR_VREG_SEL;
+		QM_SCSS_PMU->aon_vr = QM_AON_VR_PASS_CODE | reg;
+		/* Wait for >= 2usec, at most 64 clock cycles. */
+		while (i--) {
+			__asm__ __volatile__("nop");
+		}
+		reg = QM_SCSS_PMU->aon_vr & ~QM_AON_VR_ROK_BUF_VREG_MASK;
+		QM_SCSS_PMU->aon_vr = QM_AON_VR_PASS_CODE | reg;
+		break;
+	}
+	return 0;
 }

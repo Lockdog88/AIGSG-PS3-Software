@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Intel Corporation
+ * Copyright (c) 2017, Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,6 +33,10 @@
 #include "qm_common.h"
 #include "qm_soc_regs.h"
 
+#if (QM_SENSOR)
+#include "qm_sensor_regs.h"
+#endif
+
 /*
  * Linear mapping between IRQs and interrupt vectors
  */
@@ -43,6 +47,41 @@
 #define QM_IRQ_TO_VECTOR(irq) (irq + 32) /* Get the vector of and IRQ. */
 
 #endif
+
+/**
+ * Save IRQ context.
+ *
+ * On x86:
+ *     - Save IOAPIC Redirection Table for all IRQs.
+ *
+ * On sensor:
+ *     - Save interrupt enable, priority and trigger for all IRQs.
+ *
+ * @param[out] ctx IRQ context structure. This must not be NULL.
+ *
+ * @return Standard errno return type for QMSI.
+ * @retval 0 on success.
+ * @retval Negative @ref errno for possible error codes.
+ */
+int qm_irq_save_context(qm_irq_context_t *const ctx);
+
+/**
+ * Restore IRQ context.
+ *
+ * On x86:
+ *     Restore IOAPIC Redirection Table for all IRQs.
+ *     Restore LAPIC to default configuration.
+ *
+ * On sensor:
+ *     - Restore interrupt enable, priority and trigger for all IRQs.
+ *
+ * @param[in] ctx IRQ context structure. This must not be NULL.
+ *
+ * @return Standard errno return type for QMSI.
+ * @retval 0 on success.
+ * @retval Negative @ref errno for possible error codes.
+ */
+int qm_irq_restore_context(const qm_irq_context_t *const ctx);
 
 /**
  * Interrupt driver.
@@ -57,14 +96,40 @@
 typedef void (*qm_isr_t)(struct interrupt_frame *frame);
 
 /**
- * Enable interrupt delivery for the SoC.
+ * Unconditionally enable interrupt delivery on the CPU.
  */
 void qm_irq_enable(void);
 
 /**
- * Disable interrupt delivery for the SoC.
+ * Unconditionally disable interrupt delivery on the CPU.
  */
 void qm_irq_disable(void);
+
+/**
+ * Save interrupt state and disable all interrupts on the CPU.
+ *
+ * This routine disables interrupts. It can be called from either interrupt or
+ * non-interrupt context.  This routine returns an architecture-dependent
+ * lock-out key representing the "interrupt disable state" prior to the call;
+ * this key can be passed to qm_irq_unlock() to re-enable interrupts.
+ *
+ * This function can be called recursively: it will return a key to return the
+ * state of interrupt locking to the previous level.
+ *
+ * @return An architecture-dependent lock-out key representing the "interrupt
+ * 	   disable state" prior to the call.
+ *
+ */
+unsigned int qm_irq_lock(void);
+
+/**
+ *
+ * Restore previous interrupt state on the CPU saved via qm_irq_lock().
+ *
+ * @param[in] key architecture-dependent lock-out key returned by a previous
+ * 		  invocation of qm_irq_lock().
+ */
+void qm_irq_unlock(unsigned int key);
 
 /**
  * Unmask a given interrupt line.
@@ -82,7 +147,7 @@ void qm_irq_mask(uint32_t irq);
 
 void _qm_register_isr(uint32_t vector, qm_isr_t isr);
 
-void _qm_irq_setup(uint32_t irq, uint16_t register_offset);
+void _qm_irq_setup(uint32_t irq);
 
 /*
  * Request a given IRQ and register Interrupt Service Routine to interrupt
@@ -92,17 +157,17 @@ void _qm_irq_setup(uint32_t irq, uint16_t register_offset);
  * @param[in] isr ISR to register to given IRQ.
  */
 #if (QM_SENSOR)
-#define qm_irq_request(irq, isr)                                               \
+#define QM_IRQ_REQUEST(irq, isr)                                               \
 	do {                                                                   \
 		_qm_register_isr(irq##_VECTOR, isr);                           \
-		_qm_irq_setup(irq, irq##_MASK_OFFSET);                         \
+		_qm_irq_setup(irq);                                            \
 	} while (0);
 #else
-#define qm_irq_request(irq, isr)                                               \
+#define QM_IRQ_REQUEST(irq, isr)                                               \
 	do {                                                                   \
 		qm_int_vector_request(irq##_VECTOR, isr);                      \
                                                                                \
-		_qm_irq_setup(irq, irq##_MASK_OFFSET);                         \
+		_qm_irq_setup(irq);                                            \
 	} while (0)
 #endif /* QM_SENSOR */
 

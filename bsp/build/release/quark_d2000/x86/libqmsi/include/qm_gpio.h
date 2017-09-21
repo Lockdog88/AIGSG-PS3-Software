@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, Intel Corporation
+ * Copyright (c) 2017, Intel Corporation
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,7 +44,7 @@
  * GPIO pin states.
  */
 typedef enum {
-	QM_GPIO_LOW,      /**< GPIO low state. */
+	QM_GPIO_LOW = 0,  /**< GPIO low state. */
 	QM_GPIO_HIGH,     /**< GPIO high state. */
 	QM_GPIO_STATE_NUM /**< Number of GPIO states. */
 } qm_gpio_state_t;
@@ -122,8 +122,8 @@ int qm_gpio_set_pin(const qm_gpio_t gpio, const uint8_t pin);
  *
  * @param[in] gpio GPIO port index.
  * @param[in] pin Pin of GPIO port to clear.
- * @return int 0 on success, error code otherwise.
  *
+ * @return int 0 on success, error code otherwise.
  * @retval 0 on success.
  * @retval Negative @ref errno for possible error codes.
  */
@@ -173,6 +173,36 @@ int qm_gpio_read_port(const qm_gpio_t gpio, uint32_t *const port);
  */
 int qm_gpio_write_port(const qm_gpio_t gpio, const uint32_t val);
 
+/**
+ * Save GPIO context.
+ *
+ * Save the configuration of the specified GPIO peripheral
+ * before entering sleep.
+ *
+ * @param[in] gpio GPIO port index.
+ * @param[out] ctx GPIO context structure. This must not be NULL.
+ *
+ * @return Standard errno return type for QMSI.
+ * @retval 0 on success.
+ * @retval Negative @ref errno for possible error codes.
+ */
+int qm_gpio_save_context(const qm_gpio_t gpio, qm_gpio_context_t *const ctx);
+
+/**
+ * Restore GPIO context.
+ *
+ * Restore the configuration of the specified GPIO peripheral
+ * after exiting sleep.
+ *
+ * @param[in] gpio GPIO port index.
+ * @param[in] ctx GPIO context structure. This must not be NULL.
+ *
+ * @return Standard errno return type for QMSI.
+ * @retval 0 on success.
+ * @retval Negative @ref errno for possible error codes.
+ */
+int qm_gpio_restore_context(const qm_gpio_t gpio,
+			    const qm_gpio_context_t *const ctx);
 /**
  * @}
  */

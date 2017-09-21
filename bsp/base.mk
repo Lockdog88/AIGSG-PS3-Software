@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, Intel Corporation
+# Copyright (c) 2017, Intel Corporation
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -35,8 +35,6 @@ else
 PREFIX ?= i586-intel-elfiamcu
 TOOLCHAIN_DIR=$(IAMCU_TOOLCHAIN_DIR)
 endif
-
-LIBNAME=qmsi
 
 ifeq ($(TOOLCHAIN_DIR),)
 $(info Toolchain path is not defined. Please run:)
@@ -76,7 +74,6 @@ END_CMD := ;
 endif
 
 ### Build verbosity level
-
 V ?= 0
 ifeq ($(V), 0)
 else ifeq ($(V), 1)
@@ -92,8 +89,19 @@ OBJCOPY_0 = @echo "Objcopy $@" && $(PREFIX)-objcopy
 OBJCOPY_1 = $(PREFIX)-objcopy
 OBJCOPY = $(OBJCOPY_$(V))
 
+# gcc-ar seems to be broken with arc toolchain, but gcc-arc is only needed if
+# BUILD is set to lto.
+ifeq ($(TARGET) , sensor)
 AR_0 = @echo "AR $@" && $(PREFIX)-ar
 AR_1 = $(PREFIX)-ar
+# lto currently doesn't work with arc target.
+ifeq ($(BUILD), lto)
+$(error Sensor TARGET doesn't support lto BUILD option)
+endif
+else
+AR_0 = @echo "AR $@" && $(PREFIX)-gcc-ar
+AR_1 = $(PREFIX)-gcc-ar
+endif
 AR = $(AR_$(V))
 
 CC_0 = @echo "CC $@" && $(PREFIX)-gcc
@@ -114,14 +122,24 @@ $(error BASE_DIR is not defined)
 endif
 
 ### Variables
+ITA_NO_ASSERT ?= 0
 BUILD ?= release
 CFLAGS += -ffunction-sections -fdata-sections
-LDFLAGS += -Xlinker --gc-sections
+LDFLAGS += -Xlinker --gc-sections -L $(BASE_DIR)/soc/$(SOC)/linker/
 ifeq ($(BUILD), debug)
 CFLAGS += -O0 -g -DDEBUG
+ifeq ($(ITA_NO_ASSERT), 1)
+CFLAGS += -DITA_NO_ASSERT
+$(info Asserts will be switched off in debug mode due to code size limitation)
+endif
 else ifeq ($(BUILD), release)
 CFLAGS += -Os -fomit-frame-pointer
+else ifeq ($(BUILD), lto)
+CFLAGS += -Os -fomit-frame-pointer -flto
+LDFLAGS += -flto
 else
+# In addition of debug and release, BUILD also support lto, but it's a hidden
+# option for now.
 $(error Supported BUILD values are 'release' and 'debug')
 endif
 $(info BUILD = $(BUILD))
@@ -146,6 +164,7 @@ endif
 BIN = bin
 OBJ = obj
 
+LIBNAME=qmsi
 BUILD_DIR = $(BASE_DIR)/build
 LIBQMSI_DIR = $(BUILD_DIR)/$(BUILD)/$(SOC)/$(TARGET)/lib$(LIBNAME)
 LIBQMSI_LIB_DIR = $(LIBQMSI_DIR)/lib
@@ -169,7 +188,7 @@ $(info VERSION = '$(QM_VER_API)')
 ifeq ($(BUILD), debug)
 LIBQMSI_FILENAME = lib$(LIBNAME)_$(SOC)_$(QM_VER_API)d.a
 LDLIBS_FILENAME = $(LIBNAME)_$(SOC)_$(QM_VER_API)d
-else ifeq ($(BUILD), release)
+else ifneq (, $(filter $(BUILD), release lto))
 LIBQMSI_FILENAME = lib$(LIBNAME)_$(SOC)_$(QM_VER_API).a
 LDLIBS_FILENAME = $(LIBNAME)_$(SOC)_$(QM_VER_API)
 endif
@@ -181,15 +200,33 @@ HAS_HYB_XTAL := 1
 CFLAGS += -Wall -Wextra -Werror
 CFLAGS += -fmessage-length=0
 CFLAGS += -I$(BASE_DIR)/include
+
 CFLAGS += -fno-asynchronous-unwind-tables
 CFLAGS += -DHAS_RTC_XTAL=$(HAS_RTC_XTAL) -DHAS_HYB_XTAL=$(HAS_HYB_XTAL)
 CFLAGS += -DQM_VER_API_MAJOR=$(QM_VER_API_MAJOR) \
-	-DQM_VER_API_MINOR=$(QM_VER_API_MINOR) -DQM_VER_API_PATCH=$(QM_VER_API_PATCH)
+	  -DQM_VER_API_MINOR=$(QM_VER_API_MINOR) \
+	  -DQM_VER_API_PATCH=$(QM_VER_API_PATCH)
 LDFLAGS += -nostdlib
 
 STDOUT_UART_INIT ?= enable
 ifeq ($(STDOUT_UART_INIT), disable)
 CFLAGS += -DSTDOUT_UART_INIT_DISABLE
+endif
+
+### Default STDOUT UART is selected in header files of each SoC.
+### This can be changed in user application by defining
+### ENABLE_STDOUT_UART.
+### On Quark SE C1000, the output of UART1 can be sent to FTDI
+### chip or pin headers with ENABLE_UART1_FTDI.
+ifeq ($(ENABLE_STDOUT_UART), UART_0)
+CFLAGS += -DSTDOUT_UART_0
+else ifeq ($(ENABLE_STDOUT_UART), UART_1)
+CFLAGS += -DSTDOUT_UART_1
+ifeq ($(ENABLE_UART1_FTDI),1)
+CFLAGS += -DUART1_FTDI
+endif
+else ifneq ($(ENABLE_STDOUT_UART),)
+$(error Wrong UART defined)
 endif
 
 ifeq ($(TARGET), sensor)
@@ -202,13 +239,13 @@ else
 LDLIBS += -lc -lnosys -lsoftfp -lgcc
 endif
 
-### If interrupt handling is done externally, like in Zephyr.
-ifeq ($(ISR), handled)
-CFLAGS += -DISR_HANDLED
+ifeq ($(TARGET), x86)
+CFLAGS += -DQM_LAKEMONT
 endif
 
-ifeq ($(RTOS),zephyr)
-CFLAGS += -DZEPHYR_OS
+### If interrupt handling is done externally, like in Zephyr.
+ifeq ($(ENABLE_EXTERNAL_ISR_HANDLING), 1)
+CFLAGS += -DENABLE_EXTERNAL_ISR_HANDLING
 endif
 
 .PHONY: all clean realclean

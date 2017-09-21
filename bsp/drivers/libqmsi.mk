@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, Intel Corporation
+# Copyright (c) 2017, Intel Corporation
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -39,4 +39,4 @@ LDLIBS += -l$(LDLIBS_FILENAME)
 .PHONY: libqmsi
 
 libqmsi:
-	$(MAKE) -C $(BASE_DIR)/drivers SOC=$(SOC) TARGET=$(TARGET) BUILD=$(BUILD) V=$(V) CSTD=$(CSTD)
+	$(MAKE) -C $(BASE_DIR)/drivers SOC=$(SOC) TARGET=$(TARGET) BUILD=$(BUILD) V=$(V) CSTD=$(CSTD) ITA_NO_ASSERT=$(ITA_NO_ASSERT)

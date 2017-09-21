@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2016, Intel Corporation
+# Copyright (c) 2017, Intel Corporation
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,8 +30,20 @@
 ### Variables
 SOC = quark_se
 SOC_DIR = $(BASE_DIR)/soc/$(SOC)
-LINKER_FILE ?= $(SOC_DIR)/$(SOC).ld
+MEMORY_LAYOUT ?= default
+LINKER_FILE ?= $(SOC_DIR)/linker/$(MEMORY_LAYOUT)/$(TARGET).ld
+ENABLE_RESTORE_CONTEXT ?= 1
 
 ### Flags
+ifeq ($(TARGET), x86)
 CFLAGS += -march=lakemont -mtune=lakemont -miamcu -msoft-float
+endif
+
+ifeq ($(TARGET), sensor)
+### FIXME: Replace with –mcpu=quarkse_em when the ARC toolchain bug is fixed.
+CFLAGS += -mcpu=arcem -mdiv-rem -mbarrel-shifter -mspfp -mdpfp
+endif
+
+CFLAGS += -DENABLE_RESTORE_CONTEXT=$(ENABLE_RESTORE_CONTEXT)
+
 CFLAGS += -I$(SOC_DIR)/include

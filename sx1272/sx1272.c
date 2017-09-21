@@ -172,7 +172,6 @@ uint8_t receiveMessage(uint8_t * message, uint8_t ret)
 			QM_PRINTF("[CRC ERR!] RSSI: %d | SNR: %d | FERR: %ld\r\n", SX1272ReadPacketRssi(), SX1272ReadSNR(),
 						SX1272ReadFreqError());
 			if (ret == 1){
-				//clk_sys_udelay(1000000UL);
 				uint8_t buf[200];
 				sprintf((char*)buf, "RSSI: %d | SNR: %d", SX1272ReadPacketRssi(), SX1272ReadSNR());
 				sendData(buf, sizeof(buf));

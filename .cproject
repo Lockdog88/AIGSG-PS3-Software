@@ -32,12 +32,23 @@
 							</tool>
 							<tool id="com.intel.iss.mcu.cpp.linker.gcc.1524935716" name="GCC C++ Linker" superClass="com.intel.iss.mcu.cpp.linker.gcc"/>
 							<tool id="com.intel.iss.mcu.assembler.gcc.580640381" name="GCC Assembler " superClass="com.intel.iss.mcu.assembler.gcc">
+								<option id="com.intel.iss.mcu.asm.includes.inclpath.1571231010" name="Additional include directories (-I)" superClass="com.intel.iss.mcu.asm.includes.inclpath" valueType="includePath">
+									<listOptionValue builtIn="false" value="${workspace_loc:/${ProjName}}"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/AIGSG-PS3-Software/24lcxx}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/AIGSG-PS3-Software/cli}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/AIGSG-PS3-Software/magnetometer}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/AIGSG-PS3-Software/rtc}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/AIGSG-PS3-Software/sx1272}&quot;"/>
+								</option>
 								<inputType id="com.intel.iss.mcu.assembler.input.277568544" superClass="com.intel.iss.mcu.assembler.input"/>
 								<inputType id="com.intel.iss.mcu.assembler.input2.12639351" superClass="com.intel.iss.mcu.assembler.input2"/>
 							</tool>
 							<tool id="com.intel.iss.mcu.archiver.gcc.1841842805" name="GCC Archiver" superClass="com.intel.iss.mcu.archiver.gcc"/>
 						</toolChain>
 					</folderInfo>
+					<sourceEntries>
+						<entry flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name=""/>
+					</sourceEntries>
 				</configuration>
 			</storageModule>
 			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
@@ -102,11 +113,15 @@
 			<resource resourceType="PROJECT" workspacePath="/aigsg_ps2_LoRa"/>
 		</configuration>
 	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
+	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
 	<storageModule moduleId="scannerConfiguration">
 		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
 		<scannerConfigBuildInfo instanceId="issm.configuration.debug;issm.configuration.debug.;com.intel.iss.mcu.c.compiler.gcc.2042108566;com.intel.iss.mcu.compiler.c.input.253017884">
 			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.intel.iss.mcu.cdt.managedbuilder.gcc.GCCManagedMakePerProjectProfile"/>
 		</scannerConfigBuildInfo>
+		<scannerConfigBuildInfo instanceId="issm.configuration.release;issm.configuration.release.;com.intel.iss.mcu.c.compiler.gcc.818619891;com.intel.iss.mcu.compiler.c.input.1669270167">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.intel.iss.mcu.cdt.managedbuilder.gcc.GCCManagedMakePerProjectProfile"/>
+		</scannerConfigBuildInfo>
 	</storageModule>
-	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
 </cproject>

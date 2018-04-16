@@ -1,5 +1,5 @@
 /* Includes ----------------------------------------------------------------- */
-#include "eeprom.h"
+#include "24lcxx.h"
 #include "qm_i2c.h"
 #include "clk.h"
 

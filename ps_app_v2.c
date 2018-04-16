@@ -1,6 +1,6 @@
-#include "ps_app.h"
+#include "ps_app_v2.h"
 #include "debug.h"
-#include "sx1272.h"
+#include "sx1272/sx1272.h"
 #include "power_states.h"
 
 uint16_t samples_polled[3] = {0};
@@ -94,9 +94,9 @@ void ParkSens_Init(bool calibrated)
 void ParkSens_TxTest(uint8_t * device_addr)
 {
 	while(1){
-			ParkSens_Send_Packet(device_addr, DS_HIGH, st);
-			RTC_WaitTicks(10*QM_RTC_ALARM_SECOND);
-			ParkSens_Send_Packet(device_addr, DS_LOW, st);
-			RTC_WaitTicks(10*QM_RTC_ALARM_SECOND);
+			ParkSens_SendPacket(device_addr, DS_HIGH, st);
+			RTC_WaitTicks(10*QM_RTC_ALARM_SECOND(CLK_RTC_DIV_1));
+			ParkSens_SendPacket(device_addr, DS_LOW, st);
+			RTC_WaitTicks(10*QM_RTC_ALARM_SECOND(CLK_RTC_DIV_1));
 		}
 }

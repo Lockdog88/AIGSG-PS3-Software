@@ -39,7 +39,7 @@ void task_RelayControl(device_t * device_data)
 
 	startReceiving();
 	IntCompSet(IRQ_SET, RX_DONE);
-	power_soc_deep_sleep(POWER_WAKE_FROM_GPIO_COMP);
+	qm_power_soc_deep_sleep(QM_POWER_WAKE_FROM_GPIO_COMP);
 	//start_ticks = get_ticks();
 	IntCompSet(IRQ_CLEAR, RX_DONE);
 	qm_gpio_read_pin(QM_GPIO_0, PIN_TOUCH, &touch_check_state);
@@ -108,7 +108,8 @@ void task_RelayControl(device_t * device_data)
 
 __attribute__((unused)) void comp_done_callback()
 {
-	QM_SCSS_INT->int_comparators_host_mask |= BIT(PIN_DIO0) | BIT(PIN_TOUCH);
+	//QM_SCSS_INT->int_comparators_host_mask |= BIT(PIN_DIO0) | BIT(PIN_TOUCH);
+	QM_INTERRUPT_ROUTER->comparator_0_host_int_mask |= BIT(PIN_DIO0) | BIT(PIN_TOUCH);
 	QM_PRINTF("KNOCK!\r\n");
 }
 
@@ -124,11 +125,12 @@ __attribute__((unused)) void IntCompSet(irq_setup state, rxtx_done_t irq)
 		ac_cfg.polarity = 0x0;
 		ac_cfg.power |= BIT(PIN_DIO0);
 		ac_cfg.power |= BIT(PIN_TOUCH);
-		ac_cfg.int_en |= BIT(PIN_DIO0);
-		ac_cfg.int_en |= BIT(PIN_TOUCH);
+		ac_cfg.cmp_en |= BIT(PIN_DIO0);
+		ac_cfg.cmp_en |= BIT(PIN_TOUCH);
 		ac_cfg.callback = comp_done_callback;
 		qm_ac_set_config(&ac_cfg);
-		qm_irq_request(QM_IRQ_AC, qm_ac_isr);
+		QM_IR_UNMASK_INT(QM_IRQ_COMPARATOR_0_INT);
+		QM_IRQ_REQUEST(QM_IRQ_COMPARATOR_0_INT, qm_comparator_0_isr);
 
 		qm_pmux_select(QM_PIN_ID_14, QM_PMUX_FN_1);
 		qm_pmux_select(PIN_TOUCH, QM_PMUX_FN_1);
@@ -139,10 +141,10 @@ __attribute__((unused)) void IntCompSet(irq_setup state, rxtx_done_t irq)
 		ac_cfg.reference = 0x0;
 		ac_cfg.polarity = 0x0;
 		ac_cfg.power = 0x0;
-		ac_cfg.int_en = 0x0;
+		ac_cfg.cmp_en = 0x0;
 		ac_cfg.callback = NULL;
 		qm_ac_set_config(&ac_cfg);
-		qm_irq_request(QM_IRQ_AC, qm_ac_isr);
+		//qm_irq_request(QM_IRQ_AC, qm_ac_isr);
 
 		qm_pmux_select(QM_PIN_ID_14, QM_PMUX_FN_1);
 		qm_pmux_select(PIN_TOUCH, QM_PMUX_FN_1);

@@ -66,7 +66,7 @@ int main(void)
 
 	if (state_read_buf == 0x02)
 	{
-		M24C64_nByteRead(0x0001+data_mem.device_id_s+data_mem.hardware_id_s+
+		/*M24C64_nByteRead(0x0001+data_mem.device_id_s+data_mem.hardware_id_s+
 								 data_mem.ps_stat_s+data_mem.relay_stat_s,
 						  &data_mem.mag.x, 4);
 		M24C64_nByteRead(0x0001+data_mem.device_id_s+data_mem.hardware_id_s+
@@ -74,7 +74,7 @@ int main(void)
 						  &data_mem.mag.y, 4);
 		M24C64_nByteRead(0x0001+data_mem.device_id_s+data_mem.hardware_id_s+
 					      data_mem.ps_stat_s+data_mem.relay_stat_s+8,
-						  &data_mem.mag.z, 4);
+						  &data_mem.mag.z, 4);*/
 	}
 	//microrl_init (prl, print);
 	//microrl_set_execute_callback (prl, execute);

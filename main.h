@@ -8,6 +8,7 @@
 #include "power_states.h"
 #include "qm_common.h"
 #include "qm_interrupt.h"
+#include "qm_interrupt_router.h"
 #include "qm_gpio.h"
 
 #include "qm_uart.h"

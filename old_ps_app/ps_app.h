@@ -8,6 +8,7 @@
 #include "power_states.h"
 #include "qm_common.h"
 #include "qm_interrupt.h"
+#include "qm_interrupt_router.h"
 #include "qm_gpio.h"
 
 #include "qm_comparator.h"
@@ -17,12 +18,12 @@
 #include "clk.h"
 #include "qm_spi.h"
 
-#include "eeprom.h"
+#include "24lcxx/24lcxx.h"
 #include "crc16.h"
 
 #include "debug.h"
 #include "rtc/rtc.h"
-#include "sx1272.h"
+#include "sx1272/sx1272.h"
 #include "magnetometer/magnetometer.h"
 
 #define THRESHOLD_ADDR 0x0003
